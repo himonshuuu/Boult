@@ -1,0 +1,269 @@
+import quickchart
+import json
+from utils import DatabaseManager
+from html2image import Html2Image
+from collections import defaultdict
+from io import BytesIO
+import asyncio
+from PIL import Image
+from utils.spotify import SpotifyClient
+from urllib.parse import urlparse
+
+# Initialize Html2Image
+hti = Html2Image(custom_flags=["--headless=new", "--hide-scrollbars"], size=(700, 500))
+
+async def fetch_user_data(db: DatabaseManager, user_id):
+    rows = await db.fetch_all(
+        """
+        SELECT track_id, plays, duration AS total_duration
+        FROM user_play_data
+        WHERE user_id = $1
+        ORDER BY plays DESC, duration DESC
+        LIMIT 3;
+        """,
+        int(user_id)
+    )
+    return [{"track_id": row.track_id, "plays": row.plays, "total_duration": row.total_duration} for row in rows]
+
+async def fetch_top_friends(db: DatabaseManager, user_id):
+    data = await db.fetch_all(
+        """
+        SELECT sm.member_id AS friend_id, SUM(uvs.duration) AS total_duration
+        FROM user_voice_sessions uvs
+        JOIN session_members sm ON uvs.session_id = sm.session_id
+        WHERE uvs.user_id = $1 AND sm.member_id != $1
+        GROUP BY sm.member_id
+        ORDER BY total_duration DESC
+        LIMIT 3;
+        """,
+        int(user_id)
+    )
+    return [(row.friend_id, row.total_duration) for row in data]
+
+async def fetch_voice_activity_data(db: DatabaseManager, user_id):
+    data = await db.fetch_all(
+        """
+        SELECT uvs.date, SUM(uvs.duration) AS total_duration, uvs.channel_id
+        FROM user_voice_sessions uvs
+        WHERE uvs.user_id = $1
+        GROUP BY uvs.date, uvs.channel_id
+        ORDER BY uvs.date, uvs.channel_id;
+        """,
+        int(user_id)
+    )
+
+    voice_activity_data = defaultdict(dict)
+    for row in data:
+        voice_activity_data[row.date][row.channel_id] = {
+            "user_id": user_id,
+            "duration": row.total_duration,
+            "with_users": []
+        }
+    return voice_activity_data
+
+async def generate_graph(bot, user_id, voice_activity_data):
+    chart = quickchart.QuickChart()
+    chart.width = 700
+    chart.height = 300
+    chart.version = "4"
+    chart.background_color = "rgba(0, 0, 0, 0)"
+
+    labels, dataset = [], []
+
+    for date, channels in voice_activity_data.items():
+        labels.append(date)
+        total_duration = sum(
+            channel_data["duration"] for channel_data in channels.values()
+        )
+        dataset.append(total_duration // 60)
+
+    if not any(dataset):
+        return None
+
+    user_avatar_url, user_name = await fetch_user(bot, user_id=user_id)
+    chart.config = {
+        "type": "line",
+        "data": {
+            "labels": labels,
+            "datasets": [
+                {
+                    "label": user_name,
+                    "data": dataset,
+                    "borderColor": "rgba(255, 133, 182, 1)",
+                    "fill": False,
+                }
+            ],
+        },
+        "options": {
+            "scales": {
+                "x": {"ticks": {"color": "rgb(255, 255, 255)", "fontSize": 25}},
+                "y": {"ticks": {"color": "rgb(255, 255, 255)", "fontSize": 25}},
+            },
+            "elements": {"line": {"tension": 0.5}},
+        },
+    }
+    return chart.get_url()
+
+async def fetch_user(bot, user_id):
+    user = bot.get_user(user_id)
+    return (user.display_avatar.url, user.name) if user else (None, None)
+
+async def get_track(bot, track_id):
+    track = await bot.spotify.get_track(track_id)
+    return track
+
+def extract_id(spotify_url: str) -> str:
+    parsed_url = urlparse(spotify_url)
+    path_segments = parsed_url.path.split("/")
+    return path_segments[2] if len(path_segments) >= 3 else None
+
+async def generate_html_content(bot, user_data, top_friends, graph_url, track_names):
+    tracks_html = "".join(
+        f"<li>{track.entity.name} - {track_play['plays']} plays - {track_play['total_duration'] // 60} min</li>"
+        for track_play, track in zip(user_data, track_names)
+    )
+
+    friends_data = await asyncio.gather(
+        *(fetch_user(bot, friend_id) for friend_id, _ in top_friends)
+    )
+
+    friends_html = "".join(
+        f"<li><img src='{avatar_url}' alt='{username}' id='avatar'> {username} - {duration // 60} min</li>"
+        for ((avatar_url, username), (_, duration)) in zip(friends_data, top_friends)
+    )
+
+    css = """
+    * {box-sizing: border-box;margin: 0;padding: 0;}
+    body {display: flex;height: 100vh;background-color: hwb(257 17% 80%);font-family: 'Lucida Sans', Geneva, Verdana, sans-serif;color: #f0f0f0;}
+    .container {display: flex;flex-direction: column;background-color: #2e2c33;width: 1080px;border-radius: 10px;overflow: hidden;}
+    .graph, .info {display: flex;align-items: center;padding: 20px;background-color: #2e2c33;}
+    .graph {justify-content: center;}
+    .info {justify-content: space-between;gap: 20px;}
+    .top-tracks, .top-friends {flex: 1;background-color: #ffffff2d;padding: 15px;border-radius: 8px;}
+    h2 {font-size: 1.2em;margin-bottom: 10px;color: #f7b2d9;border-bottom: 2px solid #e49fc6;padding-bottom: 5px;}
+    ul {list-style-type: none;padding: 0;}
+    h1 {font-size: 2em;margin-bottom: 10px;color: #f7b2d9; align-self: center;}
+    li {display: flex;align-items: center;font-size: 0.9em;margin: 4px 0;padding: 9px;background-color: rgb(49, 47, 53);border-radius: 5px;gap: 10px;}
+    #avatar {width: 32px;height: 32px;border-radius: 5px;object-fit: cover;}
+    """
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>{css}</style>
+        <title>User Info</title>
+    </head>
+    <body>
+        <div class="container">
+            <div class="info">
+                <div class="top-tracks">
+                    <h2>Top Tracks</h2>
+                    <ul>{tracks_html}</ul>
+                </div>
+                <div class="top-friends">
+                    <h2>Top Friends</h2>
+                    <ul>{friends_html}</ul>
+                </div>
+            </div>
+            <h1>Voice Statistics</h1>
+            <div class="graph">
+                <img src="{graph_url}" alt="Graph Image" id="graph">
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+async def create_user_info_image(bot, user_id: int):
+    db = bot.db
+    user_id = int(user_id)
+    user_data = await fetch_user_data(db, user_id)
+    top_friends = await fetch_top_friends(db, user_id)
+    voice_activity_data = await fetch_voice_activity_data(db, user_id)
+
+    graph_url = await generate_graph(bot, user_id, voice_activity_data)
+    if not graph_url:
+        return None
+
+    user_avatar_url, user_name = await fetch_user(bot, user_id)
+    if not user_avatar_url or not user_name:
+        return None
+
+    track_names = await asyncio.gather(*[get_track(bot, track["track_id"]) for track in user_data])
+
+    html_content = await generate_html_content(bot, user_data, top_friends, graph_url, track_names)
+    output_path = f"user_report_{user_id}.png"
+    hti.screenshot(html_str=html_content, save_as=output_path, size=(800, 700))
+
+    with open(output_path, "rb") as image_file:
+        image_bytes = BytesIO(image_file.read())
+
+    im = Image.open(image_bytes)
+    left, top, right, bottom = 0, 0, 800, 620
+    im_cropped = im.crop((left, top, right, bottom))
+
+    bytes_ = BytesIO()
+    im_cropped.save(bytes_, format="PNG")
+    bytes_.seek(0)
+
+    return bytes_
+
+
+
+async def gen_graph(gains):
+    """
+    Generate an equalizer graph using QuickChart and return its hosted URL.
+
+    :param gains: List of gains for the 5-band equalizer.
+    :return: URL of the generated chart.
+    """
+    qc = quickchart.QuickChart()
+    qc.config = {
+        "type": "line",
+        "data": {
+            "labels": ["62.5", "250", "1k", "3.6k", "12k"],
+            "datasets": [
+                {
+                    "label": "5-Band Equalizer",
+                    "yAxisID": "db",
+                    "data": gains,
+                    "fill": True,
+                    "borderWidth": 1,
+                },
+                # Uncomment to add recommended data
+                # {
+                #     "label": "Recommended",
+                #     "yAxisID": "db",
+                #     "data": [0, 1, -1, 0, 1],
+                #     "fill": True,
+                #     "borderWidth": 1,
+                # },
+            ],
+        },
+        "options": {
+            "scales": {
+                "yAxes": [
+                    {
+                        "id": "db",
+                        "type": "linear",
+                        "position": "left",
+                        "ticks": {
+                            "suggestedMin": -2,
+                            "suggestedMax": 2,
+                            "callback": "function(value) { return value + ' db'; }",
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    qc.width = 400
+    qc.height = 200
+    qc.background_color = "white"
+    uri = qc.get_short_url()
+    return uri

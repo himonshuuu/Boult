@@ -1,0 +1,64 @@
+""" 
+MIT License
+
+Copyright (c) 2024 Himangshu Saikia
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+
+
+aiohappyeyeballs==2.4.3
+aiohttp==3.11.7
+aiosignal==1.3.1
+async-timeout==5.0.1
+asyncpg @ git+https://github.com/MagicStack/asyncpg@e9bb695413b2ee923310f9106277198cc19c47b3
+attrs==24.2.0
+braceexpand==0.1.7
+certifi==2024.8.30
+cffi==1.17.1
+charset-normalizer==3.4.0
+click==8.1.7
+discord-ext-menus @ git+https://github.com/Rapptz/discord-ext-menus@8686b5d1bbc1d3c862292eb436ab630d6e9c9b53
+discord.py @ git+https://github.com/Rapptz/discord.py@e1b6310ef387481a654a1085653a33aa1b17e034
+distro @ git+https://github.com/python-distro/distro@3bd19e61fcb7f8d2bf3d45d9e40d69c92e05d241
+frozenlist==1.5.0
+idna==3.10
+import_expression==2.2.1.post1
+jishaku @ git+https://github.com/scarletcafe/jishaku@49374cf4541b4d72778fd24f1191d3f29cf5d67c
+lru-dict @ git+https://github.com/amitdev/lru-dict@62439171e604c71cd71b66b0cbaf234088a290d3
+multidict==6.1.0
+numpy @ git+https://github.com/numpy/numpy@b1e6ccd14b173b922f5d6a11bb252f4141dc42cd
+parsedatetime @ git+https://github.com/bear/parsedatetime@2a4b16901794f8dc71721d51aef6e1ecd643868b
+propcache==0.2.0
+psutil @ git+https://github.com/giampaolo/psutil@13a336bd6e19f00999b52f83a0a7cf1d7dcf03de
+pycparser==2.22
+PyNaCl @ git+https://github.com/pyca/pynacl@b459fff7d8762e336d528b7957d5c028f7231ff2
+python-dateutil @ git+https://github.com/dateutil/dateutil@9eaa5de584f9f374c6e4943069925cc53522ad61
+pytz==2024.2
+redis==5.2.0
+requests==2.32.3
+six==1.16.0
+speedtest-cli @ git+https://github.com/sivel/speedtest-cli@22210ca35228f0bbcef75a7c14587c4ecb875ab4
+spotipy @ git+https://github.com/spotipy-dev/spotipy@db3fb9a5eea6e7c48c716fa554d497a12a78b677
+tabulate==0.9.0
+typing_extensions==4.12.2
+urllib3==2.2.3
+wavelink @ git+https://github.com/PythonistaGuild/Wavelink@0a39dcfa5c536c453867dc2a3ced8b3d3c6636e1
+yarl==1.18.0
