@@ -6,13 +6,12 @@
 [![Discord Server](https://img.shields.io/discord/1165304777131966567?color=5865F2&logo=discord&logoColor=white&style=for-the-badge&label=Community)](https://discord.gg/df5N3e8ZBB)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 [![Python Version](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Stars](https://img.shields.io/github/stars/0xhimangshu/boult?style=for-the-badge&logo=github)](https://github.com/0xhimangshu/boult/stargazers)
-
+[![Stars](https://img.shields.io/github/stars/0xhimangshu/Boult?style=for-the-badge&logo=github)](https://github.com/0xhimangshu/Boult/stargazers)
 
 *A feature-rich Discord music bot built with Python, providing high-quality music playback and utility features for your Discord server.*
 
 [Invite Bot](https://discord.com/oauth2/authorize?client_id=1119244729373163562) •
-[Support Server](https://discord.gg/df5N3e8ZBB) •
+[Support Server](https://discord.gg/df5N3e8ZBB) 
 
 </div>
 
