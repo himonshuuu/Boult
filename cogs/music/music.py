@@ -185,9 +185,16 @@ class Music(Cog):
             await self._play_single_track(ctx, tracks[0])
             
         elif "/playlist/" in query:
-            tracks = await wavelink.Playable.search(query, source="spsearch")
-            playlist = await self.bot.spotify.get_playlist(query)
-            await self._play_playlist(ctx, tracks.tracks, playlist.entity.name, playlist.artwork, query)
+            try:
+                tracks = await wavelink.Playable.search(query, source="spsearch")
+            except:
+                playlist = await self.bot.spotify.get_playlist(query)
+                tracks = []
+                for track in playlist.tracks:
+                    track = await wavelink.Playable.search(track.entity.url)
+                    tracks.append(track[0]) 
+
+            await self._play_playlist(ctx, tracks, playlist.entity.name, playlist.artwork, query)
             
         elif "/album/" in query:
             tracks = await wavelink.Playable.search(query, source="spsearch")
