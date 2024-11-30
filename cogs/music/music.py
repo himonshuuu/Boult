@@ -187,6 +187,7 @@ class Music(Cog):
         elif "/playlist/" in query:
             try:
                 tracks = await wavelink.Playable.search(query, source="spsearch")
+                playlist = await self.bot.spotify.get_playlist(query)
             except:
                 playlist = await self.bot.spotify.get_playlist(query)
                 tracks = []
