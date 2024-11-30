@@ -137,19 +137,6 @@ class Meta(Cog):
 
         await ctx.send(embed=embed)
 
-    # def get_last_commits(self):
-    #     # Initialize the repository
-    #     repo = git.Repo("./")
-
-    #     commits = list(repo.iter_commits("HEAD", max_count=3))
-
-    #     formatted_commits = [
-    #         f"[{commit.hexsha[:8]}](https://github.com/0xhimangshu/Boult-lite/commit/{commit.hexsha}) - {commit.message.strip()} - [{commit.author.name}](https://github.com/{commit.author.name}) - {format_relative(commit.committed_datetime)}"
-    #         for commit in commits
-    #     ]
-
-    #     return formatted_commits
-
     def run_speedtest(self):
         st = speedtest.Speedtest()
         download_speed = st.download() / 1024 / 1024

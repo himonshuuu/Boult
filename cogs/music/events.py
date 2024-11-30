@@ -100,7 +100,7 @@ class MusicEvents(Cog):
             view.remove_item(view.next)
             content = "-# </autoplay:1310295138052079645> to disable"
 
-        player.message = await channel.send(embed=embed, view=view, content=content if content else None)
+        player.message = await channel.send(embed=embed, view=view, content=content if content else None, delete_after=(player.current.length / 1000) + 5)
         player.start_time = datetime.datetime.now()
 
         await self.update_channel_status(player, f"{track.title} - {track.author}")
@@ -141,7 +141,7 @@ class MusicEvents(Cog):
         if player.autoplay == wavelink.AutoPlayMode.enabled:
             if not player.queue.is_empty:
                 await player.play(player.queue.get())
-                await self.cleanup_player(player)
+                return
             return
 
         await self.cleanup_player(player)
