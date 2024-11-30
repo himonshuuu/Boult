@@ -37,7 +37,7 @@ import discord
 import wavelink
 from discord.ext import commands
 from discord.utils import cached_property
-
+from urllib.parse import quote
 import config
 from utils import BoultContext as Context
 from utils import DatabaseManager, SpotifyClient
@@ -226,7 +226,7 @@ class Boult(commands.AutoShardedBot):
 
     @startup_task.append
     async def setup_db(self):
-        dsn = f"postgres://{config.pgsql.pg_user}:{config.pgsql.pg_auth}@{config.pgsql.pg_host}:{config.pgsql.pg_port}/{config.pgsql.pg_dbname}"
+        dsn = f"postgres://{config.pgsql.pg_user}:{quote(config.pgsql.pg_auth)}@{config.pgsql.pg_host}:{config.pgsql.pg_port}/{config.pgsql.pg_dbname}"
         await self.db.initialize(dsn)
         
         self.logger.info("Connected to database")
