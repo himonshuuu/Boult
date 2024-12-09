@@ -74,7 +74,7 @@ class Meta(Cog):
             async with session.get(f"https://api.github.com/repos/0xhimangshu/Boult/commits?per_page=10") as r:
                 data = await r.json()
                 c = []
-                for i in range(3):
+                for i in range(10):
                     c.append((data[i]['sha'], data[i]['commit']['message'], data[i]['commit']['author']['name'], data[i]['commit']['author']['date'], data[i]['html_url']))
                 return c
             
