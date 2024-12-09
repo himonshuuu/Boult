@@ -26,6 +26,7 @@ SOFTWARE.
 
 import asyncio
 import random
+import aiohttp
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -35,18 +36,17 @@ import asyncpg
 import discord
 import distro
 import psutil
-import speedtest
 import wavelink
+from utils import truncate_string
 from discord.ext import commands
 
-import config
+import datetime
 from core import Boult, Cog
 from utils import BoultContext, NodeView, format_relative, LinkButton, Link
 
 
 class Meta(Cog):
     """Commands that are related to the bot itself."""
-
     def __init__(self, bot: Boult):
         self.bot = bot
 
@@ -64,6 +64,47 @@ class Meta(Cog):
         write_end = time.time()
 
         return read_end - read_start, write_end - write_start
+    
+    async def get_latest_change(self):
+        async with aiohttp.ClientSession(headers=self.bot.config.github_headers) as session:
+            async with session.get(f"https://api.github.com/repos/0xhimangshu/Robo/commits?per_page=3") as r:
+                data = await r.json()
+                c = []
+                for i in range(3):
+                    c.append((data[i]['sha'], data[i]['commit']['message'], data[i]['commit']['author']['name'], data[i]['commit']['author']['date'], data[i]['html_url']))
+                return c
+            
+    async def _commits(self):
+        commits = await self.get_latest_change()
+        xx = ""
+        for commit in commits:
+            try:
+                commit_date = datetime.datetime.fromisoformat(commit[3])
+            except ValueError as e:
+                print(f"Error parsing date {commit[3]}: {e}")
+                continue
+
+            try:
+                # Convert to IST timezone
+                commit_date_ist = commit_date.astimezone(self.bot.config.ist)
+            except Exception as e:
+                print(f"Error converting timezone: {e}")
+                continue
+
+            try:
+                # Convert datetime to timestamp and round it
+                timestamp = round(commit_date_ist.timestamp())
+            except Exception as e:
+                print(f"Error converting datetime to timestamp: {e}")
+                continue
+
+            xx += (
+                f"[{truncate_string(commit[0], max_length=6, suffix='')}]({commit[4]}) "
+                f"- `{commit[1]}` by [{commit[2]}](https://github.com/{commit[2]}) "
+                f"<t:{timestamp}:R>\n"
+            )
+
+        return xx
 
 
     @commands.hybrid_command(
@@ -126,7 +167,7 @@ class Meta(Cog):
                 "\n"
                 f"> **Developer :** [0xhimangshu](https://discord.com/users/775660503342776341)\n"
                 f"> **Special thanks to** \n"
-                f"> [Mainak](https://discord.com/users/510002835140771842), [Aryan](https://discord.com/users/742958335426297967), [Hardevara](https://discord.com/users/1068479967089917973), [Bablu sir](https://discord.com/users/1212431696381612132)\n"
+                f"> [Mainak](https://discord.com/users/510002835140771842), [Hardevara](https://discord.com/users/1068479967089917973)\n"
             ),
             color=0x2C2C34,
         )
@@ -136,20 +177,6 @@ class Meta(Cog):
         )
 
         await ctx.send(embed=embed)
-
-    def run_speedtest(self):
-        st = speedtest.Speedtest()
-        download_speed = st.download() / 1024 / 1024
-        upload_speed = st.upload() / 1024 / 1024
-        return download_speed, upload_speed
-
-    async def get_speedtest_results(self):
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            download_speed, upload_speed = await loop.run_in_executor(
-                executor, self.run_speedtest
-            )
-        return download_speed, upload_speed
 
     @commands.hybrid_command(with_app_command=True, name="stats")
     @commands.cooldown(1, 60, commands.BucketType.user)
@@ -168,25 +195,20 @@ class Meta(Cog):
             process = psutil.Process()
             ram_uses = f"{process.memory_info().rss / (1024**2):.2f} MB ({process.memory_full_info().uss / (1024**2):.2f} MB)"
             cpu_uses = f"{psutil.cpu_percent():.2f}%"
-            try:
-                download, upload = await self.get_speedtest_results()
-            except Exception:
-                download, upload = random.randint(500, 999), random.randint(500, 999)
-            netspeed = f"{config.emoji.download}{round(download, 2)} MB/s | {config.emoji.upload}{round(upload, 2)} MB/s"
-            # changes = "\n".join(self.get_last_commits())
+          
+            changes = await self._commits()
             
             embed.description = (
                 f"> **Host** : {os_name}\n"
                 f"> **RAM** : {ram_uses}\n"
                 f"> **CPU** : {cpu_uses}\n"
-                f"> **Internet** : {netspeed}\n"
                 "\n"
                 f"> **Uptime** : {format_relative(self.bot.uptime)}\n"
                 f"> **Message seen** : {msg} ({self.bot.cached_messages.__len__()} cached)\n"
                 f"> **Commands ran** : {cmd}"
-                # "\n\n"
-                # "**Latest Changes**\n"
-                # f"{changes}"
+                "\n\n"
+                "**Latest Changes**\n"
+                f"{changes}"
             )
             embed.set_author(
                 name="Boult System Stats",
