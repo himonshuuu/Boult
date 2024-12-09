@@ -157,8 +157,12 @@ class Music(Cog):
                 await self._handle_jiosaavn(ctx, query)
                 return
 
-            if re.match(r"<@!?(\d+)>", query):
-                await self._handle_user_activity(ctx, query)
+            mention_match = re.match(r"<@!?(\d+)>", query)  # Match mention format
+            user_id_match = re.match(r"^\d+$", query)       # Match numeric user ID
+
+            if mention_match or user_id_match:
+                user_id = int(mention_match.group(1) if mention_match else query)
+                await self._handle_user_activity(ctx, user_id=user_id)
                 return
 
             # Handle generic URLs
@@ -308,9 +312,8 @@ class Music(Cog):
         else:
             await self._play_single_track(ctx, tracks[0])
 
-    async def _handle_user_activity(self, ctx: BoultContext, query: str):
+    async def _handle_user_activity(self, ctx: BoultContext, user_id: int):
         """Handle user activity/currently playing"""
-        user_id = int(re.match(r"<@!?(\d+)>", query).group(1))
         user = ctx.guild.get_member(user_id)
         
         if not user or not user.activities:
