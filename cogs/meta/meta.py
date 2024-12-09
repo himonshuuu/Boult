@@ -70,8 +70,8 @@ class Meta(Cog):
                 "Accept": "application/vnd.github+json",
                 # "Authorization": f"Bearer {config.git_token}"
             }
-        async with aiohttp.ClientSession(headers=github_headers) as session:
-            async with session.get(f"https://api.github.com/repos/0xhimangshu/Boult/commits?per_page=5") as r:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://api.github.com/repos/0xhimangshu/Boult/commits?per_page=10") as r:
                 data = await r.json()
                 c = []
                 for i in range(3):
