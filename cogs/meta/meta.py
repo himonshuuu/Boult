@@ -66,12 +66,12 @@ class Meta(Cog):
         return read_end - read_start, write_end - write_start
     
     async def get_latest_change(self):
-        self.github_headers = {
+        github_headers = {
                 "Accept": "application/vnd.github+json",
                 # "Authorization": f"Bearer {config.git_token}"
             }
-        async with aiohttp.ClientSession(headers=self.bot.config.github_headers) as session:
-            async with session.get(f"https://api.github.com/repos/0xhimangshu/Boult/commits?per_page=3") as r:
+        async with aiohttp.ClientSession(headers=github_headers) as session:
+            async with session.get(f"https://api.github.com/repos/0xhimangshu/Boult/commits?per_page=5") as r:
                 data = await r.json()
                 c = []
                 for i in range(3):
