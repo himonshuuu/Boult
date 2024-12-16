@@ -551,7 +551,7 @@ class Music(Cog):
         if ctx.interaction:
             await ctx.defer()
 
-        await ctx.voice_client._skip(ctx=ctx)
+        await ctx.voice_client.next(ctx=ctx)
 
     @commands.hybrid_command(name="skipto", with_app_command=True)
     @in_voice_channel(user=True, bot=True)
