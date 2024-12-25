@@ -18,30 +18,13 @@ CREATE TABLE dj_config(
     PRIMARY KEY(guild_id)
 );
 
+CREATE TABLE guild_config (
+    guild_id BIGINT PRIMARY KEY,
+    prefix VARCHAR(255) DEFAULT "b?"
+);
 CREATE TABLE user_config(
     user_id bigint NOT NULL,
     search_engine text,
     no_prefix boolean,
     PRIMARY KEY(user_id)
-);
-
-
--- NOT IMPLEMENTED YET 
--- MAYBE IN FUTURE
--- YOU CAN ALSO CONTRIBUTE TO THIS IF YOU WANT
-CREATE TABLE user_playlists (
-    user_id BIGINT NOT NULL,
-    playlist_id BIGINT NOT NULL REFERENCES playlist(playlist_id) ON DELETE CASCADE
-);
-
-CREATE TABLE playlist (
-    playlist_id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    tracks JSONB NOT NULL
-);
-
-
-CREATE TABLE guild_config (
-    guild_id BIGINT PRIMARY KEY,
-    prefix VARCHAR(255) DEFAULT "b?"
 );

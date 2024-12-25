@@ -2,6 +2,7 @@
 venv/
 env/
 .env/
+.venv
 
 __pycache__/
 *.py[cod]
@@ -10,6 +11,8 @@ __pycache__/
 *.log
 *.log.*
 logs/
+
+
 
 *.db
 *.sqlite
@@ -30,3 +33,5 @@ graph.py
 
 config.py
 test.py
+
+migrations/

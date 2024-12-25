@@ -148,6 +148,7 @@ class BoultContext(commands.Context["Boult"], Generic[T]):
         timeout: float = 60.0,
         delete_after: bool = True,
         author_id: Optional[int] = None,
+        **kwargs: Any
     ) -> Optional[bool]:
         author_id = author_id or self.author.id
         view = ConfirmationView(
@@ -155,7 +156,7 @@ class BoultContext(commands.Context["Boult"], Generic[T]):
             delete_after=delete_after,
             author_id=author_id,
         )
-        view.message = await self.send(message, view=view, ephemeral=delete_after)
+        view.message = await self.send(message, view=view, ephemeral=delete_after, **kwargs)
         await view.wait()
         return view.value
     

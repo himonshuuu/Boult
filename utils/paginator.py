@@ -33,7 +33,7 @@ from discord.ext.commands import Paginator as CommandPaginator
 from discord.ext import menus
 
 if TYPE_CHECKING:
-    from .context import Context
+    from ..extensions.context.context import Context
 
 
 class NumberedPageModal(discord.ui.Modal, title="Go to page"):

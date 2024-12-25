@@ -80,7 +80,7 @@ units["seconds"].append("secs")
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-    from utils.context import Context
+    from extensions.context.context import Context
 
 
 class ShortTime:

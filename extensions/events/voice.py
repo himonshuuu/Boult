@@ -29,7 +29,7 @@ from core.player import Player
 
 class Voice(Cog):
     def __init__(self, bot: Boult):
-        self.bot = bot
+        super().__init__(bot)
         self.active_sessions = {}
 
     @Cog.listener("on_ready")
@@ -59,8 +59,8 @@ class Voice(Cog):
 
                     channel = guild.get_channel(row.vc_channel)
                     if channel is None:
-                        continue
-
+                        pass
+    
                     vc = guild.voice_client
                     if vc is None:
                         try:
@@ -72,3 +72,6 @@ class Voice(Cog):
                 self.bot.logger.error(
                     f"Error fetching guilds or connecting to voice channels: {e}"
                 )
+
+async def setup(bot: Boult):
+    await bot.add_cog(Voice(bot))

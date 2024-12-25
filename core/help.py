@@ -22,16 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-
-
 from collections.abc import Mapping
 from typing import Any, Callable, List, Optional
 
 import discord
 from discord.ext import commands
 from discord.ui import Button, Select, View
+from discord import utils
 
-from utils.context import BoultContext
+from extensions.context.context import BoultContext
 
 
 class HelpPaginator(View):
@@ -44,9 +43,21 @@ class HelpPaginator(View):
         self.main_view = main_view
         self.current_page = 0
 
-        self.prev_button = Button(label="Previous", style=discord.ButtonStyle.blurple)
-        self.next_button = Button(label="Next", style=discord.ButtonStyle.blurple)
-        self.home_button = Button(label="Home", style=discord.ButtonStyle.green)
+        self.prev_button = Button(
+            style=discord.ButtonStyle.secondary,
+            emoji="◀️",
+            custom_id="prev"
+        )
+        self.next_button = Button(
+            style=discord.ButtonStyle.secondary, 
+            emoji="▶️",
+            custom_id="next"
+        )
+        self.home_button = Button(
+            style=discord.ButtonStyle.success,
+            emoji="🏠",
+            custom_id="home"
+        )
 
         self.prev_button.callback = self.go_previous
         self.next_button.callback = self.go_next
@@ -85,15 +96,19 @@ class HelpSelect(Select):
     def __init__(self, bot: commands.Bot, main_embed: discord.Embed, main_view: View):
         options = [
             discord.SelectOption(
-                emoji=getattr(cog, "display_emoji", None),
+                emoji=getattr(cog, "display_emoji", "📦"),
                 label=cog_name,
-                description=getattr(cog, "description", "No description provided"),
+                description=getattr(cog, "description", "No description provided")[:100],
             )
             for cog_name, cog in bot.cogs.items()
             if getattr(cog, "__cog_commands__", None)
             and cog_name not in ["Jishaku", "Help"]
         ]
-        super().__init__(placeholder="Choose a category", options=options)
+        super().__init__(
+            placeholder="Select a category to view commands...",
+            options=options,
+            custom_id="category_select"
+        )
         self.bot = bot
         self.main_embed = main_embed
         self.main_view = main_view
@@ -111,41 +126,47 @@ class HelpSelect(Select):
 
         if not cog:
             await interaction.response.send_message(
-                "Category not found.", ephemeral=True
+                "❌ Category not found.", ephemeral=True
             )
             return
 
         commands_list = self.flatten_commands(cog)
         embeds = []
-        prefix = "b?"  # You might want to get this dynamically
+        prefix = "b?"
 
         for i in range(0, len(commands_list), 3):
             commands_chunk = commands_list[i : i + 3]
             embed = discord.Embed(
-                title=f"{cog.__cog_name__} Commands - Page {i // 3 + 1}", color=0x2b2d31
+                title=f"{getattr(cog, 'display_emoji', '📦')} {cog.__cog_name__} Commands",
+                description=f"{cog.description or 'No description provided'}\n\n**Page {i // 3 + 1}/{(len(commands_list) + 2) // 3}**",
+                color=0x2b2d31
             )
 
             for command in commands_chunk:
-                usage = f"{prefix}{command.qualified_name} {' '.join(f'<{param}>' for param in command.clean_params.keys())}"
-                aliases = ", ".join(command.aliases) if command.aliases else "None"
+                usage = f"{prefix}{command.qualified_name} {command.signature}"
+                aliases = ", ".join(f"`{a}`" for a in command.aliases) if command.aliases else "None"
                 description = command.help or "No description provided"
 
                 embed.add_field(
-                    name=f"**{prefix}{command.qualified_name}**",
-                    value=f"> {description}\n"
-                    f"> **Aliases:** {aliases}\n"
-                    f"> **Usage:** `{usage}`",
+                    name=f"/{command.qualified_name}",
+                    value=(
+                        f"{description}\n"
+                        f"**Prefix:** `{prefix}{command.qualified_name}`\n"
+                        f"**Usage:** `{usage}`\n"
+                        f"**Aliases:** {aliases}"
+                    ),
                     inline=False,
                 )
 
             embed.set_author(
-                name=f"{self.bot.user.name}'s Help Menu",
+                name=f"{self.bot.user.name} Help",
                 icon_url=self.bot.user.display_avatar.url,
             )
             embed.set_footer(
-                text=f"Requested by {interaction.user.name}",
+                text=f"Requested by {interaction.user}",
                 icon_url=interaction.user.display_avatar.url,
             )
+            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
             embeds.append(embed)
 
         paginator = HelpPaginator(
@@ -158,7 +179,8 @@ class HelpCommand(commands.HelpCommand):
     def __init__(self):
         super().__init__(
             command_attrs={
-                "help": "Show help about the bot, a command, or a cog.",
+                "help": "Shows help about the bot, a command, or a category",
+                "cooldown": commands.CooldownMapping.from_cooldown(1, 3, commands.BucketType.user),
                 "name": "help",
             }
         )
@@ -171,7 +193,7 @@ class HelpCommand(commands.HelpCommand):
                 flattened.append(command)
         return flattened
 
-    async def command_callback(self, ctx: BoultContext, *, command: Optional[str] = None): # NOT RECOMMENDED :)
+    async def command_callback(self, ctx: BoultContext, *, command: Optional[str] = None):
         if command:
             cmd = ctx.bot.get_command(command)
             if cmd:
@@ -183,7 +205,7 @@ class HelpCommand(commands.HelpCommand):
                     await self.send_cog_help(cog)
                     return
             
-            await ctx.send(f'No command or category called "{command}" found.')
+            await ctx.send(f'❌ No command or category called "{command}" found.')
             return
 
         await self.send_bot_help(self.get_bot_mapping())
@@ -192,61 +214,84 @@ class HelpCommand(commands.HelpCommand):
         self, mapping: Mapping[Optional[commands.Cog], list[commands.Command]]
     ):
         embed = discord.Embed(
-            description=f"Hey {self.context.author.mention}! I'm {self.context.bot.user.name}\n"
-            f"A decent music bot with some cool features\n\n"
-            f"To get more info use the dropdown menu below",
+            title="Bot Help",
+            description=(
+                f"👋 Hey {self.context.author.mention}! I'm {self.context.bot.user.name}\n"
+                f"A feature-rich Discord bot with music, moderation and more!\n\n"
+                f"**Quick Links**\n"
+                f"• [Support Server](https://discord.gg/boult)\n"
+                f"• [Invite Bot]({utils.oauth_url(self.context.bot.user.id)})\n\n"
+                f"**Getting Started**\n"
+                f"• Use the dropdown below to browse commands\n" 
+                f"• Both slash (`/`) and prefix commands work\n"
+                f"• Default prefix is `{self.prefix}`"
+            ),
             color=0x2b2d31,
         )
         embed.set_author(
-            name=f"{self.context.bot.user.name}'s Help Menu",
+            name=f"{self.context.bot.user.name} Help",
             icon_url=self.context.bot.user.display_avatar.url,
         )
         embed.set_footer(
-            text=f"Requested by {self.context.author.name}",
+            text=f"Requested by {self.context.author}",
             icon_url=self.context.author.display_avatar.url,
         )
         embed.set_thumbnail(url=self.context.bot.user.display_avatar.url)
 
-        view = View()
+        view = View(timeout=180)
         help_select = HelpSelect(self.context.bot, main_embed=embed, main_view=view)
         view.add_item(help_select)
 
         await self.get_destination().send(embed=embed, view=view)
 
     async def send_command_help(self, command: commands.Command):
-        aliases = ", ".join(command.aliases) if command.aliases else "None"
+        embed = discord.Embed(
+            color=0x2b2d31,
+            title=f"Command: /{command.qualified_name}"
+        )
+        
         description = command.help or "No description provided"
         usage = f"{self.prefix}{command.qualified_name} {command.signature}"
-
-        embed = discord.Embed(
-            title=f"Command: {self.prefix}{command.qualified_name}",
-            description=f"> {description}\n"
-            f"> **Aliases:** {aliases}\n"
-            f"> **Usage:** `{usage}`",
-            color=0x2b2d31,
+        aliases = ", ".join(f"`{a}`" for a in command.aliases) if command.aliases else "None"
+        
+        embed.description = f"{description}"
+        
+        embed.add_field(
+            name="Usage",
+            value=f"{usage}",
+            inline=False
         )
+        
+        if command.aliases:
+            embed.add_field(
+                name="Aliases", 
+                value=aliases,
+                inline=False
+            )
 
         if isinstance(command, commands.Group):
-            for subcommand in command.commands:
-                if not subcommand.hidden:
-                    embed.add_field(
-                        name=f"{self.prefix}{subcommand.qualified_name}",
-                        value=(
-                            f"> {subcommand.short_doc or 'No description provided'}\n"
-                            f"> **Usage:** `{self.prefix}{subcommand.qualified_name} {' '.join(f'<{param}>' for param in subcommand.clean_params.keys())}`"
-                            f"> **Aliases:** {', '.join(subcommand.aliases) if subcommand.aliases else 'None'}"
-                        ),
-                        inline=False,
+            subcommands = []
+            for subcmd in command.commands:
+                if not subcmd.hidden:
+                    subcommands.append(
+                        f"• `/{subcmd.qualified_name}` - {subcmd.short_doc or 'No description'}"
                     )
+            if subcommands:
+                embed.add_field(
+                    name="Subcommands",
+                    value="\n".join(subcommands),
+                    inline=False
+                )
 
         embed.set_author(
-            name=self.context.bot.user.name,
-            icon_url=self.context.bot.user.display_avatar.url,
+            name=f"{self.context.bot.user.name} Help",
+            icon_url=self.context.bot.user.display_avatar.url
         )
         embed.set_footer(
-            text=f"Requested by {self.context.author.name}",
-            icon_url=self.context.author.display_avatar.url,
+            text=f"Requested by {self.context.author}",
+            icon_url=self.context.author.display_avatar.url
         )
+        embed.set_thumbnail(url=self.context.bot.user.display_avatar.url)
 
         await self.get_destination().send(embed=embed)
 
@@ -254,44 +299,39 @@ class HelpCommand(commands.HelpCommand):
         self, group: commands.Group[Any, Callable[..., Any], Any]
     ) -> None:
         embed = discord.Embed(
-            title=f"Command: {self.prefix}{group.qualified_name}",
-            description=f"> {group.help or 'No description provided'}\n",
+            title=f"Command Group: /{group.qualified_name}",
+            description=f"{group.help or 'No description provided'}",
             color=0x2b2d31,
         )
 
         embed.set_author(
-            name=self.context.bot.user.name,
+            name=f"{self.context.bot.user.name} Help",
             icon_url=self.context.bot.user.display_avatar.url,
         )
-
         embed.set_footer(
-            text=f"Requested by {self.context.author.name}",
+            text=f"Requested by {self.context.author}",
             icon_url=self.context.author.display_avatar.url,
         )
+        embed.set_thumbnail(url=self.context.bot.user.display_avatar.url)
 
         commands_list = self.flatten_commands(group)
         if len(commands_list) <= 3:
-            subcommands = ", ".join(f"`{c.name}`" for c in commands_list)
-            if subcommands:
-                embed.add_field(name="Subcommands", value=subcommands, inline=False)
+            for cmd in commands_list:
+                embed.add_field(
+                    name=f"/{cmd.qualified_name}",
+                    value=f"{cmd.short_doc or 'No description'}\n**Usage:** `{self.prefix}{cmd.qualified_name} {cmd.signature}`",
+                    inline=False
+                )
             await self.get_destination().send(embed=embed)
         else:
             embeds = []
             current_embed = embed.copy()
 
             for i, cmd in enumerate(commands_list, 1):
-                aliases = ", ".join(cmd.aliases) if cmd.aliases else "None"
-                description = cmd.help or "No description provided"
-                usage = f"{self.prefix}{cmd.qualified_name} {cmd.signature}"
-
                 current_embed.add_field(
-                    name=f"{cmd.name}",
-                    value=(
-                        f"> {cmd.help or 'No description provided'}\n"
-                        f"> **Aliases:** {aliases}\n"
-                        f"> **Usage:** `{usage}`"
-                    ),
-                    inline=False,
+                    name=f"/{cmd.qualified_name}",
+                    value=f"{cmd.short_doc or 'No description'}\n**Usage:** `{self.prefix}{cmd.qualified_name} {cmd.signature}`",
+                    inline=False
                 )
 
                 if i % 3 == 0 or i == len(commands_list):
@@ -304,44 +344,39 @@ class HelpCommand(commands.HelpCommand):
 
     async def send_cog_help(self, cog: commands.Cog) -> None:
         embed = discord.Embed(
-            title=f"Cog: {cog.__cog_name__}",
-            description=f"> {cog.description or 'No description provided'}\n",
+            title=f"{getattr(cog, 'display_emoji', '📦')} {cog.__cog_name__}",
+            description=f"{cog.description or 'No description provided'}",
             color=0x2b2d31,
         )
 
         embed.set_author(
-            name=self.context.bot.user.name,
+            name=f"{self.context.bot.user.name} Help",
             icon_url=self.context.bot.user.display_avatar.url,
         )
-
         embed.set_footer(
-            text=f"Requested by {self.context.author.name}",
+            text=f"Requested by {self.context.author}",
             icon_url=self.context.author.display_avatar.url,
         )
+        embed.set_thumbnail(url=self.context.bot.user.display_avatar.url)
 
         commands_list = self.flatten_commands(cog)
         if len(commands_list) <= 3:
-            commands = ", ".join(f"> `{c.qualified_name}`" for c in commands_list)
-            if commands:
-                embed.add_field(name="Commands", value=commands, inline=False)
+            for cmd in commands_list:
+                embed.add_field(
+                    name=f"/{cmd.qualified_name}",
+                    value=f"{cmd.short_doc or 'No description'}\n**Usage:** `{self.prefix}{cmd.qualified_name} {cmd.signature}`",
+                    inline=False
+                )
             await self.get_destination().send(embed=embed)
         else:
             embeds = []
             current_embed = embed.copy()
             
-            for i, command in enumerate(commands_list, 1):
-                aliases = ", ".join(command.aliases) if command.aliases else "None"
-                description = command.short_doc or "No description provided"
-                usage = f"{self.prefix}{command.qualified_name} {' '.join(f'<{param}>' for param in command.clean_params.keys())}"
-
+            for i, cmd in enumerate(commands_list, 1):
                 current_embed.add_field(
-                    name=f"> {self.prefix}{command.qualified_name}",
-                    value=(
-                        f"> {description}\n"
-                        f"> **Aliases:** {aliases}\n"
-                        f"> **Usage:** `{usage}`"
-                    ),
-                    inline=False,
+                    name=f"/{cmd.qualified_name}",
+                    value=f"{cmd.short_doc or 'No description'}\n**Usage:** `{self.prefix}{cmd.qualified_name} {cmd.signature}`",
+                    inline=False
                 )
 
                 if i % 3 == 0 or i == len(commands_list):

@@ -22,144 +22,115 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-
-
 from __future__ import annotations
 
 import asyncio
-import enum
 import time
-
-from functools import wraps
-from typing import Any, Callable, Coroutine, MutableMapping, TypeVar, Protocol
+import logging
+from typing import Any, Callable, Dict, TypeVar, Optional
 
 from lru import LRU
 
-R = TypeVar("R")
+T = TypeVar('T')
+logger = logging.getLogger(__name__)
 
+class CacheManager:
+    """A cache manager that provides TTL and size-based caching with async support."""
+    
+    def __init__(self, max_size: int = 1000, ttl: float = 3600):
+        """
+        Initialize the cache manager.
+        
+        Args:
+            max_size: Maximum number of items to store in cache
+            ttl: Time to live in seconds for cache entries
+        """
+        self._cache: Dict[str, tuple[Any, float]] = LRU(max_size)
+        self._ttl = ttl
+        self._hits = 0
+        self._misses = 0
+        self._lock = asyncio.Lock()
 
-# Can't use ParamSpec due to https://github.com/python/typing/discussions/946
-class CacheProtocol(Protocol[R]):
-    cache: MutableMapping[str, asyncio.Task[R]]
+    async def get(self, key: str, fetcher: Optional[Callable[[], T]] = None) -> Optional[T]:
+        """
+        Get a value from cache, fetching and caching if not present and fetcher provided.
+        
+        Args:
+            key: Cache key
+            fetcher: Optional callable that returns/awaits the value if not in cache
+            
+        Returns:
+            The cached value, fetched value if fetcher provided, or None if not found
+        """
+        async with self._lock:
+            # Check if key exists and is not expired
+            if key in self._cache:
+                value, timestamp = self._cache[key]
+                if time.monotonic() - timestamp <= self._ttl:
+                    self._hits += 1
+                    return value
+                else:
+                    # Remove expired entry
+                    del self._cache[key]
 
-    def __call__(self, *args: Any, **kwds: Any) -> asyncio.Task[R]: ...
-
-    def get_key(self, *args: Any, **kwargs: Any) -> str: ...
-
-    def invalidate(self, *args: Any, **kwargs: Any) -> bool: ...
-
-    def invalidate_containing(self, key: str) -> None: ...
-
-    def get_stats(self) -> tuple[int, int]: ...
-
-
-class ExpiringCache(dict):
-    def __init__(self, seconds: float):
-        self.__ttl: float = seconds
-        super().__init__()
-
-    def __verify_cache_integrity(self):
-        # Have to do this in two steps...
-        current_time = time.monotonic()
-        to_remove = [
-            k for (k, (v, t)) in self.items() if current_time > (t + self.__ttl)
-        ]
-        for k in to_remove:
-            del self[k]
-
-    def __contains__(self, key: str):
-        self.__verify_cache_integrity()
-        return super().__contains__(key)
-
-    def __getitem__(self, key: str):
-        self.__verify_cache_integrity()
-        return super().__getitem__(key)
-
-    def __setitem__(self, key: str, value: Any):
-        super().__setitem__(key, (value, time.monotonic()))
-
-
-class Strategy(enum.Enum):
-    lru = 1
-    raw = 2
-    timed = 3
-
-
-def cache(
-    maxsize: int = 128,
-    strategy: Strategy = Strategy.lru,
-    ignore_kwargs: bool = False,
-) -> Callable[[Callable[..., Coroutine[Any, Any, R]]], CacheProtocol[R]]:
-    def decorator(func: Callable[..., Coroutine[Any, Any, R]]) -> CacheProtocol[R]:
-        if strategy is Strategy.lru:
-            _internal_cache = LRU(maxsize)
-            _stats = _internal_cache.get_stats
-        elif strategy is Strategy.raw:
-            _internal_cache = {}
-            _stats = lambda: (0, 0)
-        elif strategy is Strategy.timed:
-            _internal_cache = ExpiringCache(maxsize)
-            _stats = lambda: (0, 0)
-
-        def _make_key(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
-            # this is a bit of a cluster fuck
-            # we do care what 'self' parameter is when we __repr__ it
-            def _true_repr(o):
-                if o.__class__.__repr__ is object.__repr__:
-                    return f"<{o.__class__.__module__}.{o.__class__.__name__}>"
-                return repr(o)
-
-            key = [f"{func.__module__}.{func.__name__}"]
-            key.extend(_true_repr(o) for o in args)
-            if not ignore_kwargs:
-                for k, v in kwargs.items():
-                    # note: this only really works for this use case in particular
-                    # I want to pass asyncpg.Connection objects to the parameters
-                    # however, they use default __repr__ and I do not care what
-                    # connection is passed in, so I needed a bypass.
-                    if k == "connection" or k == "pool":
-                        continue
-
-                    key.append(_true_repr(k))
-                    key.append(_true_repr(v))
-
-            return ":".join(key)
-
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any):
-            key = _make_key(args, kwargs)
+            self._misses += 1
+            
+            if fetcher is None:
+                return None
+                
             try:
-                task = _internal_cache[key]
-            except KeyError:
-                _internal_cache[key] = task = asyncio.create_task(func(*args, **kwargs))
-                return task
-            else:
-                return task
+                # Fetch new value
+                value = fetcher()
+                if asyncio.iscoroutine(value):
+                    value = await value
+                    
+                # Cache the new value
+                self._cache[key] = (value, time.monotonic())
+                return value
+                
+            except Exception as e:
+                logger.error(f"Error fetching value for key {key}: {str(e)}")
+                raise
 
-        def _invalidate(*args: Any, **kwargs: Any) -> bool:
-            try:
-                del _internal_cache[_make_key(args, kwargs)]
-            except KeyError:
-                return False
-            else:
-                return True
+    async def set(self, key: str, value: Any, expire: float = None) -> None:
+        """Set a value in cache with optional expiration."""
+        expire = expire or self._ttl
+        self._cache[key] = (value, time.monotonic() + expire)
+        logger.debug(f"Set cache key {key} with value {value} and expiration {expire}")
 
-        def _invalidate_containing(key: str) -> None:
-            to_remove = []
-            for k in _internal_cache.keys():
-                if key in k:
-                    to_remove.append(k)
-            for k in to_remove:
-                try:
-                    del _internal_cache[k]
-                except KeyError:
-                    continue
+    def invalidate(self, key: str) -> None:
+        """Remove a specific key from cache."""
+        self._cache.pop(key, None)
+        
+    def invalidate_pattern(self, pattern: str) -> None:
+        """Remove all keys containing the pattern."""
+        keys_to_remove = [k for k in self._cache.keys() if pattern in k]
+        for key in keys_to_remove:
+            self._cache.pop(key, None)
 
-        wrapper.cache = _internal_cache
-        wrapper.get_key = lambda *args, **kwargs: _make_key(args, kwargs)
-        wrapper.invalidate = _invalidate
-        wrapper.get_stats = _stats
-        wrapper.invalidate_containing = _invalidate_containing
-        return wrapper  # type: ignore
+    def clear(self) -> None:
+        """Clear all entries from cache."""
+        self._cache.clear()
 
-    return decorator
+    def get_stats(self) -> dict[str, int]:
+        """Get cache statistics."""
+        return {
+            'size': len(self._cache),
+            'hits': self._hits,
+            'misses': self._misses,
+            'hit_rate': self._hits / (self._hits + self._misses) if (self._hits + self._misses) > 0 else 0
+        }
+    
+    def cleanup_expired(self) -> None:
+        """Cleanup expired entries from cache."""
+        now = time.monotonic()
+        expired_keys = [k for k, (_, expiry) in self._cache.items() if now > expiry]
+        for key in expired_keys:
+            self._cache.pop(key, None)
+
+    def cleanup_old(self) -> None:
+        """Cleanup old entries from cache."""
+        now = time.monotonic()
+        expired_keys = [k for k, (_, expiry) in self._cache.items() if now > expiry]
+        for key in expired_keys:
+            self._cache.pop(key, None)

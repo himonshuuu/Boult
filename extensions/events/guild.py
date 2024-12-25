@@ -35,7 +35,7 @@ from utils.buttons import LinkButton, Link
 class Guild(Cog):
 
     def __init__(self, bot: Boult):
-        self.bot = bot
+        super().__init__(bot)
 
     @Cog.listener("on_guild_join")
     async def _on_guild_join(self, guild: discord.Guild):
@@ -132,3 +132,6 @@ class Guild(Cog):
             )
         except:
             pass
+
+async def setup(bot: Boult):
+    await bot.add_cog(Guild(bot))

@@ -24,31 +24,34 @@ SOFTWARE.
 
 
 
+import random
+
 import discord
-from discord.ext import commands
+from discord.ext import tasks
 
 from core import Boult, Cog
 
-from utils import BoultContext
 
-
-class Playlist(Cog): # TODO: Implement
+class Ready(Cog):
     def __init__(self, bot: Boult):
-        self.bot = bot
+        super().__init__(bot)
+        
+    @tasks.loop(seconds=15)
+    async def status_task(self):
+        choice = random.choice(self.bot.config.bot.statuses)
+        activity_type = next((k for k in ["listening", "watching", "playing"] if choice.get(k)), "listening")
+        activity_name = choice.get(activity_type, "Boult Boults")
+        await self.bot.change_presence(activity=discord.Activity(type=getattr(discord.ActivityType, activity_type), name=activity_name))
 
-    @commands.hybrid_group(name="playlist", with_app_command=True)
-    async def playlist(self, ctx: BoultContext):
-        """
-        Manage your playlists.
-        """
-        if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
+    @Cog.listener("on_ready")
+    async def status_task_start(self):
+        self.bot.logger.info(f"logged in as {self.bot.user}")
+        try:
+            await self.status_task.start()
+        except RuntimeError:
+            pass
 
-    @playlist.command(name="create", with_app_command=True)
-    async def create(self, ctx: BoultContext, *, name: str):
-        ... # TODO
+    
 
-    @playlist.command(name="delete", with_app_command=True)
-    async def delete(self, ctx: BoultContext, *, name: str):
-        ... # TODO
-
+async def setup(bot: Boult):
+    await bot.add_cog(Ready(bot))

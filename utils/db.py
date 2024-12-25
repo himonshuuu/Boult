@@ -97,7 +97,7 @@ class DatabaseManager:
         return wrapper
 
     @asynccontextmanager
-    async def acquire(self) -> asyncpg.Connection:
+    async def acquire(self): #type:ignore
         """Get a connection from the pool using async context manager."""
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
@@ -108,7 +108,6 @@ class DatabaseManager:
             except Exception as e:
                 self.logger.error(f"Database connection error: {e}")
                 raise
-
     @log_query
     async def fetch_one(self, query: str, *args: Any) -> Optional[Row]:
         """Fetch a single row from the database."""
