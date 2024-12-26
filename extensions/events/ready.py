@@ -35,14 +35,8 @@ from core import Boult, Cog
 class Ready(Cog):
     def __init__(self, bot: Boult):
         super().__init__(bot)
-        
-    @tasks.loop(seconds=15)
-    async def status_task(self):
-        choice = random.choice(self.bot.config.bot.statuses)
-        activity_type = next((k for k in ["listening", "watching", "playing"] if choice.get(k)), "listening")
-        activity_name = choice.get(activity_type, "Boult Boults")
-        await self.bot.change_presence(activity=discord.Activity(type=getattr(discord.ActivityType, activity_type), name=activity_name))
 
+        
     @Cog.listener("on_ready")
     async def status_task_start(self):
         self.bot.logger.info(f"logged in as {self.bot.user}")

@@ -364,8 +364,7 @@ class Music(Cog):
 
             view = TrackRemoveView(self.bot, ctx.voice_client, valid_tracks)
             embed = discord.Embed(
-                description=f"> {len(valid_tracks)} tracks from [{
-                    name}]({query})",
+                description=f"> {len(valid_tracks)} tracks from [{name}]({query})",
                 timestamp=datetime.datetime.now()
             ).set_author(
                 name="Enqueued playlist",
@@ -375,7 +374,7 @@ class Music(Cog):
             if artwork:
                 embed.set_thumbnail(url=artwork)
 
-            total_duration = sum(t.duration for t in valid_tracks)
+            total_duration = sum([t.length for t in valid_tracks])
             embed.add_field(
                 name="Total Duration",
                 value=format_duration(total_duration)
@@ -799,13 +798,9 @@ class Music(Cog):
             embed.add_field(name="New Queue Preview",
                             value=preview, inline=False)
 
-        view = MusicView(self.bot, player)
-        view.remove_item(view.stop)
-
         await ctx.send(
             content=f"{ctx.author.mention} shuffled the queue",
-            embed=embed,
-            view=view
+            embed=embed
         )
 
     @commands.hybrid_command(name="pause", with_app_command=True)
@@ -903,14 +898,6 @@ class Music(Cog):
                 f"• Position: {format_duration(
                     player.position)}/{format_duration(current_track.length)}"
             )
-
-            if player.queue and not player.queue.is_empty:
-                next_track = player.queue[0]
-                embed.add_field(
-                    name="Up Next",
-                    value=f"• {next_track.title}",
-                    inline=False
-                )
 
         view = MusicView(bot=self.bot, player=player)
         view.remove_item(view.next)
@@ -1089,8 +1076,7 @@ class Music(Cog):
         if player.current:
             embed.add_field(
                 name="Current Track",
-                value=f"• {player.current.title}\n"
-                f"• Duration: {format_duration(player.current.length)}",
+                value=f"• {player.current.title}\n",
                 inline=False
             )
 
@@ -1134,16 +1120,6 @@ class Music(Cog):
                 value=f"🔊 {player.volume}%",
                 inline=True
             )
-
-            if player.current:
-                embed.add_field(
-                    name="Now Playing",
-                    value=f"• {player.current.title}\n"
-                    f"• Position: {format_duration(
-                        player.position)}/{format_duration(player.current.length)}",
-                    inline=False
-                )
-
             view = VolumeView(self.bot, player)
             view.msg = await ctx.send(embed=embed, view=view)
             return
@@ -1296,7 +1272,7 @@ class Music(Cog):
             raise commands.CommandError(
                 "Please provide a valid time format (MM:SS).")
 
-    @commands.hybrid_group(name="queue")
+    @commands.hybrid_group(name="queue", aliases=["q","que"])
     async def queue(self, ctx: BoultContext):
         """ 
         Queue management commands.

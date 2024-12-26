@@ -131,15 +131,17 @@ class MusicEvents(Cog):
                     text=f"Added by {requester_name} | {format_duration(track.length)}", 
                     icon_url=requester.display_avatar.url
                 )
-                
-                # View setup with dynamic components
-                view = MusicView(self.bot, player)
                 content = None
+                if player.queue and not player.queue.is_empty:
+                    next_track = player.queue[0]
+                    content = f"-# Next: [{next_track.title}]({next_track.uri})"
+                
+                view = MusicView(self.bot, player)
+
                 if player.autoplay == wavelink.AutoPlayMode.enabled:
                     view.remove_item(view.next)
                     content = "-# </autoplay:1310295138052079645> to disable"
 
-                # Send message and update player state
                 player.message = await channel.send(embed=embed, view=view, content=content)
                 player.start_time = datetime.datetime.now()
 
@@ -223,7 +225,7 @@ class MusicEvents(Cog):
                     player.guild.id
                 )
 
-            if not vc_config or vc_config['vc_channel'] == 0:
+            if not vc_config or vc_config.vc_channel == 0:
                 if not player.playing:
                     disconnect_timeout =  30
                     

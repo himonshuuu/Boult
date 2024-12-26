@@ -57,7 +57,7 @@ class Cog(Cog):
 
     def __repr__(self) -> str:
         """
-        Enhanced string representation of the cog instance.
+        string representation of the cog instance.
         
         Returns:
             str: Detailed string representation including cog status

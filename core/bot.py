@@ -27,8 +27,10 @@ import itertools
 import json
 import logging
 import os
+import random
+import time
 import weakref
-from collections import defaultdict
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import (Any, Callable, Coroutine, Dict, List, Optional, Type,
@@ -36,6 +38,7 @@ from typing import (Any, Callable, Coroutine, Dict, List, Optional, Type,
 
 import aiohttp
 import discord
+import orjson
 import wavelink
 from discord.ext import commands, tasks
 from discord.utils import cached_property
@@ -43,7 +46,7 @@ from discord.utils import cached_property
 import config
 from extensions.context import BoultContext
 from utils import DatabaseManager, SpotifyClient
-from utils.cache import CacheManager
+from utils.cache import CacheManager, TTLCache
 from utils.fetcher import EntityFetcher
 
 from .help import HelpCommand
@@ -62,29 +65,61 @@ startup_task: List[Callable[["Boult"], Coroutine[Any, Any, None]]] = []
 class BotState:
     uptime: Optional[discord.utils.utcnow] = None
     session: Optional[aiohttp.ClientSession] = None
-    prefix_cache: Dict[int, str] = field(default_factory=dict)
+    prefix_cache: TTLCache[int, str] = field(default_factory=lambda: TTLCache(ttl=3600))
+    command_cooldowns: defaultdict[str, deque[float]] = field(
+        default_factory=lambda: defaultdict(lambda: deque(maxlen=100))
+    )
     cache: Dict[str, Any] = field(default_factory=lambda: {
         "players": weakref.WeakValueDictionary(),
         "lyrics_tasks": {},
         "msg_seen": 0,
-        "cmd_ran": 0
+        "cmd_ran": 0,
+        "error_count": defaultdict(int),
+        "performance_metrics": defaultdict(list)
     })
+    development_mode: bool = False
+    shard_ready_events: Dict[int, asyncio.Event] = field(default_factory=dict)
     
 class CacheDescriptor:
-    def __init__(self, filename: str):
+    def __init__(self, filename: str, compression: bool = True):
         self.filename = filename
+        self.compression = compression
         self._cache = None
-    
+        self._last_write = 0
+        self._write_interval = 300  # 5 minutes
+        self._dirty = False
+        
     def __get__(self, instance: Optional["Boult"], owner: type) -> Dict[str, Any]:
         if self._cache is None:
-            with open(self.filename, "r") as f:
-                self._cache = json.load(f)
+            try:
+                with open(self.filename, "rb") as f:
+                    self._cache = orjson.loads(f.read()) if self.compression else json.load(f)
+            except FileNotFoundError:
+                self._cache = {}
         return self._cache
     
     def __set__(self, instance: "Boult", value: Dict[str, Any]) -> None:
         self._cache = value
-        with open(self.filename, "w") as f:
-            json.dump(value, f)
+        self._dirty = True
+        current_time = time.time()
+        
+        if current_time - self._last_write >= self._write_interval:
+            self._write_to_disk()
+            
+    def _write_to_disk(self) -> None:
+        if not self._dirty:
+            return
+            
+        try:
+            with open(self.filename, "wb" if self.compression else "w") as f:
+                if self.compression:
+                    f.write(orjson.dumps(self._cache))
+                else:
+                    json.dump(self._cache, f)
+            self._last_write = time.time()
+            self._dirty = False
+        except Exception as e:
+            logging.error(f"Failed to write cache to disk: {e}")
 
     def get_cache(self) -> Dict[str, Any]:
         return self.__get__(None, None)
@@ -108,10 +143,14 @@ class Boult(commands.AutoShardedBot):
         )
 
         self._state = BotState()
-        self._dev = dev
+        self._state.development_mode = dev
+        self._state.start_time = time.time()
         self._executor = ThreadPoolExecutor(max_workers=os.cpu_count())
         self._prefix_invalidation_events = defaultdict(asyncio.Event)
-        
+        self._rate_limiters: Dict[str, RateLimiter] = {}
+        self._shutdown_event = asyncio.Event()  
+        self._dev = dev
+        self._state.development_mode = self._dev
         self.cache_manager = CacheManager(max_size=1000, ttl=3600)
         self.db = db_manager
         self.fetcher = EntityFetcher(self)
@@ -133,14 +172,30 @@ class Boult(commands.AutoShardedBot):
             
         @tasks.loop(minutes=15)
         async def status_rotation():
-            activities = itertools.cycle([
-                discord.Activity(type=discord.ActivityType.listening, name="your commands"),
-                discord.Activity(type=discord.ActivityType.watching, name=f"{len(self.guilds)} servers"),
-                discord.Activity(type=discord.ActivityType.playing, name="with music")
-            ])
-            await self.change_presence(activity=next(activities))
+            choice = random.choice(self.config.bot.statuses)
+            activity_type = next((k for k in ["listening", "watching", "playing"] if choice.get(k)), "listening")
+            activity_name = choice.get(activity_type, "Boult Boults")
+            await self.change_presence(activity=discord.Activity(type=getattr(discord.ActivityType, activity_type), name=activity_name))
+
             
         self._task_loops.extend([cache_cleanup, status_rotation])
+
+        @tasks.loop(minutes=1)
+        async def metrics_collection():
+            try:
+                await self._metrics.collect(self)
+            except Exception as e:
+                self.logger.error(f"Metrics collection failed: {e}")
+                
+        @tasks.loop(minutes=30)
+        async def node_health_check():
+            for node in self.nodes:
+                try:
+                    if not node.is_connected():
+                        self.logger.warning(f"Node {node.identifier} disconnected, attempting reconnect")
+                        await self._reconnect_node(node)
+                except Exception as e:
+                    self.logger.error(f"Node health check failed for {node.identifier}: {e}")
 
     @cached_property
     def config(self) -> config:
@@ -182,6 +237,7 @@ class Boult(commands.AutoShardedBot):
         return self._dev
 
     async def get_prefix(self, message: discord.Message) -> Union[List[str], str]:
+
         if self.dev:
             return commands.when_mentioned_or(self.config.bot.canary_prefix)(self, message)
 
@@ -243,6 +299,8 @@ class Boult(commands.AutoShardedBot):
         for loop in self._task_loops:
             loop.start()
 
+        self._ready.set()
+
     async def get_context(
         self,
         origin: discord.Message | discord.Interaction,
@@ -259,7 +317,7 @@ class Boult(commands.AutoShardedBot):
         if not ctx.command:
             return
 
-        if self.dev and ctx.author.id not in self.owner_ids:
+        if self._state.development_mode and ctx.author.id not in self.owner_ids:
             await message.channel.send(
                 embed=discord.Embed(
                     description="🛠️ Development mode active - commands restricted to bot owners",
@@ -275,6 +333,7 @@ class Boult(commands.AutoShardedBot):
             self.logger.error(f"Command error in {ctx.command}: {e}")
             await self.on_command_error(ctx, e)
 
+
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot:
             return
@@ -282,6 +341,7 @@ class Boult(commands.AutoShardedBot):
         try:
             self.cache["msg_seen"] += 1
         except Exception as e:
+            print(e)
             self.logger.error(f"Error incrementing message count: {e}")
 
         if message.content == self.user.mention:
@@ -315,7 +375,7 @@ class Boult(commands.AutoShardedBot):
         self.logger.info("Starting extension loading process...")
 
         for category, ext_list in extensions.items():
-            self.logger.info(f"\nLoading {category} extensions:")
+            self.logger.info(f"Loading {category} extensions:")
             for ext in ext_list:
                 try:
                     await self.load_extension(ext)
@@ -327,7 +387,7 @@ class Boult(commands.AutoShardedBot):
                     raise  
 
         total_loaded = sum(len(ext_list) for ext_list in extensions.values())
-        self.logger.info(f"\nExtension loading complete. Loaded {total_loaded} extensions.")
+        self.logger.info(f"Extension loading complete. Loaded {total_loaded} extensions.")
 
     @startup_task.append
     async def setup_wavelink(self) -> None:
@@ -353,6 +413,18 @@ class Boult(commands.AutoShardedBot):
             except Exception as e:
                 self.logger.error(f"Failed connecting to node {i}: {e}")
 
+    async def _reconnect_node(self, node: wavelink.Node) -> None:
+        backoff = 1
+        while not self._shutdown_event.is_set():
+            try:
+                await wavelink.Pool.connect(client=self, nodes=[node])
+                self.logger.info(f"Successfully reconnected to node {node.identifier}")
+                return
+            except Exception as e:
+                self.logger.error(f"Failed to reconnect to node {node.identifier}: {e}")
+                await asyncio.sleep(min(backoff * 2, 300))
+                backoff *= 2
+
     @startup_task.append
     async def setup_application_commands(self) -> None:
         await asyncio.sleep(5)  # Allow guild cache to populate
@@ -368,7 +440,7 @@ class Boult(commands.AutoShardedBot):
         self.logger.info(f"Booting up in {'development' if self.dev else 'production'} mode...")
         try:
             token = self.config.bot.canary_token if self.dev else self.config.bot.token
-            await super().start(token)
+            await super().start(token, reconnect=True)
         except KeyboardInterrupt:
             self.logger.info("Shutdown initiated via KeyboardInterrupt")
             self._cleanup()

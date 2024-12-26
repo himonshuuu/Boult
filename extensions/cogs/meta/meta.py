@@ -39,6 +39,7 @@ import psutil
 import wavelink
 from discord.ext import commands, tasks
 import pytz
+import platform
 from core import Boult, Cog
 from utils import (Link, LinkButton, NodeView, format_relative,
                    truncate_string)
@@ -335,10 +336,19 @@ class Meta(Cog):
 
             changes = await self._commits()
 
+            libs = (
+                f"> Python: {platform.python_version()}\n"
+                f"> Asyncpg: {__import__('asyncpg').__version__}\n"
+                f"> Aiohttp: {aiohttp.__version__}\n"
+                f"> Discord.py: {discord.__version__}\n"
+                f"> Jishaku: {__import__('jishaku').__version__}\n"
+                f"> Wavelink: {wavelink.__version__}\n"
+            )
+
             embed = discord.Embed(
                 color=self.bot.color,
                 description=(
-                    f"**System Information**\n{os_info}\n"
+                    f"**System Information**\n{os_info}\n{libs}\n"
                     f"**Memory Statistics**\n{memory_stats}\n"
                     f"**CPU Statistics**\n{cpu_stats}\n"
                     f"**Disk Statistics**\n{disk_stats}\n"

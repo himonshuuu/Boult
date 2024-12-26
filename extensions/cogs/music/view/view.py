@@ -100,18 +100,18 @@ class MusicView(discord.ui.View):
                 )
                 return False
                 
-            await self._cache.set(
-                f"interaction_cooldown:{interaction.user.id}", 
-                True, 
-                expire=2
-            )
-            return True
+        #     await self._cache.set(
+        #         f"interaction_cooldown:{interaction.user.id}", 
+        #         True, 
+        #         expire=1
+        #     )
+        #     return True
             
-        await interaction.response.send_message(
-            "Please wait a moment before using controls again",
-            ephemeral=True
-        )
-        return False
+        # await interaction.response.send_message(
+        #     "Please wait a moment before using controls again",
+        #     ephemeral=True
+        # )
+        # return False
 
     @discord.ui.button(emoji=emoji.prev, row=1)
     async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
